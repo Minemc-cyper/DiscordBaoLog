@@ -214,7 +214,7 @@ async function next(guild) {
   if (q.textChannelId) {
     const name = track.title || track.url;
     const dur = formatDuration(track.duration);
-    const req = track.requester ? ` • yêu cầu: ${track.requester}` : '';
+    const req = track.requesterName ? ` • yêu cầu: ${track.requesterName}` : '';
     safeSend(guild, q.textChannelId, { content: `🎶🎵 Đang phát: **${name}**${dur ? ` (${dur})` : ''}${req}` });
   }
 }
@@ -235,12 +235,21 @@ function readQueryFromInteraction(interaction) {
   } catch { return null; }
 }
 
+// ===== Helpers để index.js kiểm tra quyền điều khiển =====
+export function currentController(guildId) {
+  const q = queues.get(guildId);
+  return q?.current?.requesterId ?? null;
+}
+export function currentControllerName(guildId) {
+  const q = queues.get(guildId);
+  return q?.current?.requesterName ?? null;
+}
+
 // ===== Handlers =====
 export async function handlePlay(interaction, query) {
   if (!interaction.guild || !interaction.member?.voice?.channel) {
     return interaction.reply({ content: '❌ Bạn cần vào voice channel trước.', ephemeral: true });
   }
-  // Ephemeral để không làm bẩn kênh chat
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   const guild = interaction.guild;
@@ -271,12 +280,11 @@ export async function handlePlay(interaction, query) {
     return;
   }
 
-  const requester = interaction.member?.displayName || interaction.user?.username || interaction.user?.id;
+  const requesterId = interaction.user?.id;
+  const requesterName = interaction.member?.displayName || interaction.user?.username || interaction.user?.id;
   const inputUrlOrQuery = /^https?:\/\//i.test(text) ? text : `ytsearch1:${text}`;
-  q.items.push({ url: inputUrlOrQuery, title: text, duration: null, requester });
+  q.items.push({ url: inputUrlOrQuery, title: text, duration: null, requesterId, requesterName });
 
-  // Không gửi "✅ Đã thêm vào hàng đợi"
-  // Thay bằng dấu hiệu nhỏ rồi xoá để hoàn tất interaction tránh "Interaction failed"
   await interaction.editReply({ content: '🎵' }).catch(() => {});
   setTimeout(() => interaction.deleteReply().catch(()=>{}), 1000);
 
@@ -304,7 +312,7 @@ export async function handleQueue(interaction) {
   if (!q || (!q.current && q.items.length === 0)) return interaction.reply({ content: '📭 Hàng đợi trống.', ephemeral: true });
   const lines = [];
   if (q.current) lines.push(`🎶 ${q.current.title || q.current.url}`);
-  q.items.forEach((t, i) => lines.push(`${i + 1}. ${t.title || t.url}`));
+  q.items.forEach((t, i) => lines.push(`${i + 1}. ${t.title || t.url} — ${t.requesterName ? `by ${t.requesterName}` : ''}`));
   await interaction.reply({ content: '```' + lines.join('\n') + '```' });
 }
 export async function handleLeave(interaction) {
