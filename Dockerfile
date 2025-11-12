@@ -1,15 +1,32 @@
-FROM node:20-bullseye
+# Dockerfile for Railway - ensures python, ffmpeg, libopus, build tools and Node 22
+FROM node:22-bullseye
 
-# Cài Python + build-essential + ffmpeg + libopus
+# Install system deps: python (and ensure 'python' binary), build tools, ffmpeg, opus
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ ffmpeg libopus-dev libsodium-dev \
+    python3 \
+    python-is-python3 \
+    build-essential \
+    pkg-config \
+    ffmpeg \
+    libopus-dev \
+    libsodium-dev \
+    ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Copy package files first (cache)
 COPY package*.json ./
-RUN npm ci --only=production
 
+# Install production deps
+# Use npm ci and omit dev dependencies
+RUN npm ci --omit=dev
+
+# Copy rest of app
 COPY . .
+
+# Expose not necessary for Discord bot, but keep default
+ENV NODE_ENV=production
 
 CMD ["node", "index.js"]
