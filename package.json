@@ -5,6 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "preinstall": "echo Skipping python check",
     "start": "node index.js"
   },
   "dependencies": {

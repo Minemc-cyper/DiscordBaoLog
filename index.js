@@ -11,7 +11,7 @@ import {
   handlePlay, handleSkip, handleStop, handleQueue, handleLeave,
   handlePause, handleResume,
   currentController, currentControllerName
-} from './music.opus.v7.6.js';
+} from './music.js';
 
 
 /* =========================
