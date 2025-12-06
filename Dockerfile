@@ -28,5 +28,6 @@ COPY . .
 
 # Expose not necessary for Discord bot, but keep default
 ENV NODE_ENV=production
+ENV YOUTUBE_DL_SKIP_DOWNLOAD 1
 
 CMD ["node", "index.js"]
