@@ -9,7 +9,7 @@ import ytdlp from 'youtube-dl-exec';
 import { ChannelType } from 'discord.js';
 import { Console } from 'node:console';
 
-const ffmpegPath = process.platform === 'win32' ? ffmpegStatic : 'ffmpeg';
+const ffmpegPath = ffmpegStatic || 'ffmpeg';
 const queues = new Map();
 const IDLE_MS = 5 * 60 * 1000;
 
