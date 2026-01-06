@@ -2,10 +2,10 @@
   "name": "kiemtrasever",
   "version": "1.0.0",
   "description": "Discord bot kiểm tra server & phát nhạc",
-  "main": "index.js",
+  "main": "index.cjs",
   "scripts": {
     "preinstall": "echo Skipping python check",
-    "start": "node index.js"
+    "start": "node index.cjs"
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
