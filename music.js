@@ -43,7 +43,7 @@ function hookPlayer(q, guild) {
     if (q.leaving) return;
     if (q.items.length > 0 && q.connection) {
       console.log('⏳ Đang nghỉ 3s...')
-      SetTimeout(() => {
+      setTimeout(() => {
         next(guild).catch(e => console.warn('[next error@Idle]', e?.message || e));
       }, 3000);
     }
