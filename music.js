@@ -4,10 +4,12 @@ import {
   entersState, VoiceConnectionStatus, demuxProbe
 } from '@discordjs/voice';
 import { spawn } from 'node:child_process';
-import ffmpegPath from 'ffmpeg-static';
+import ffmpegStatic from 'ffmpeg-static';
 import ytdlp from 'youtube-dl-exec';
 import { ChannelType } from 'discord.js';
+import { Console } from 'node:console';
 
+const ffmpegPath = process.platform === 'win32' ? ffmpegStatic : 'ffmpeg';
 const queues = new Map();
 const IDLE_MS = 5 * 60 * 1000;
 
@@ -39,9 +41,17 @@ function hookPlayer(q, guild) {
     safeStopCurrent(q, /*soft=*/true);
     q.current = null;
     if (q.leaving) return;
-    if (q.items.length > 0 && q.connection) next(guild).catch(e => console.warn('[next error@Idle]', e?.message || e));
-    else armIdleTimer(guild, q);
-  });
+    if (q.items.length > 0 && q.connection) {
+      console.log('⏳ Đang nghỉ 3s...')
+      SetTimeout(() => {
+        next(guild).catch(e => console.warn('[next error@Idle]', e?.message || e));
+      }, 3000);
+    }
+    else {
+      armIdleTimer(guild, q);
+    }
+    });
+
   q.player.on('error', (err) => {
     console.warn('Player error:', err?.message || err);
     safeStopCurrent(q, /*soft=*/true);
@@ -156,8 +166,25 @@ async function makeOggOpusPipeline(inputStream) {
     '-f', 'ogg',
     'pipe:1',
   ], { stdio: ['pipe', 'pipe', 'ignore'] });
+
   attachProcSwallow(ff, 'ffmpeg');
-  inputStream.pipe(ff.stdin);
+
+  // --- ĐOẠN FIX LỖI EOF ---
+  // Khi ffmpeg chết, nếu ta cố ghi vào stdin của nó sẽ gây lỗi.
+  // Dòng này giúp bắt lỗi đó và lờ đi (vì nhạc đã dừng rồi, lỗi cũng không sao).
+  ff.stdin.on('error', (err) => {
+      // Bỏ qua lỗi EPIPE hoặc EOF vì đó là do ffmpeg đã tắt
+      if (err.code === 'EPIPE' || err.code === 'EOF') return;
+      console.warn('[ffmpeg stdin error]', err.message);
+  });
+
+  // Pipe dữ liệu và cũng bắt lỗi ở luồng pipe
+  inputStream.pipe(ff.stdin).on('error', (err) => {
+      if (err.code === 'EPIPE' || err.code === 'EOF') return;
+      // console.warn('[pipe error]', err.message); 
+  });
+  // -----------------------
+
   return ff.stdout;
 }
 
@@ -187,7 +214,7 @@ async function next(guild) {
   }
 
   const dl = ytdlp.exec(playableUrl, {
-    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true, quiet: true, addHeader: headers,
+    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, cookies:'./cookies.txt'
   });
   if (typeof dl?.catch === 'function') dl.catch(()=>{});
   attachProcSwallow(dl, 'yt-dlp');
@@ -248,9 +275,9 @@ export function currentControllerName(guildId) {
 // ===== Handlers =====
 export async function handlePlay(interaction, query) {
   if (!interaction.guild || !interaction.member?.voice?.channel) {
-    return interaction.reply({ content: '❌ Bạn cần vào voice channel trước.', ephemeral: true });
+    return interaction.reply({ content: '❌ Bạn cần vào voice channel trước.', flags: 64 });
   }
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  await interaction.deferReply({ flags: 64 }).catch(() => {});
 
   const guild = interaction.guild;
   const q = getQueue(guild);
@@ -285,8 +312,9 @@ export async function handlePlay(interaction, query) {
   const inputUrlOrQuery = /^https?:\/\//i.test(text) ? text : `ytsearch1:${text}`;
   q.items.push({ url: inputUrlOrQuery, title: text, duration: null, requesterId, requesterName });
 
-  await interaction.editReply({ content: '🎵' }).catch(() => {});
-  setTimeout(() => interaction.deleteReply().catch(()=>{}), 1000);
+  await interaction.editReply({ 
+    content: `✅ **Đã thêm vào hàng đợi:** ${text}`
+  }).catch(() => {});
 
   if (q.player.state.status !== 'playing' && q.connection) {
     next(guild).catch(e => console.warn('[next error@play]', e?.message || e));
@@ -295,7 +323,7 @@ export async function handlePlay(interaction, query) {
 
 export async function handleSkip(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q) return interaction.reply({ content: '⏭️ Không có gì để skip.', ephemeral: true });
+  if (!q) return interaction.reply({ content: '⏭️ Không có gì để skip.', flags: 64 });
   safeStopCurrent(q);
   await interaction.reply({ content: '⏭️ Đã skip.' }).catch(() => {});
   if (q.items.length > 0 && q.connection) next(interaction.guild).catch(()=>{});
@@ -303,13 +331,13 @@ export async function handleSkip(interaction) {
 }
 export async function handleStop(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q) return interaction.reply({ content: '⏹️ Không có gì để dừng.', ephemeral: true });
+  if (!q) return interaction.reply({ content: '⏹️ Không có gì để dừng.', flags: 64 });
   fullCleanup(interaction.guild, q);
   await interaction.reply({ content: '⏹️ Đã dừng và xoá hàng đợi.' });
 }
 export async function handleQueue(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q || (!q.current && q.items.length === 0)) return interaction.reply({ content: '📭 Hàng đợi trống.', ephemeral: true });
+  if (!q || (!q.current && q.items.length === 0)) return interaction.reply({ content: '📭 Hàng đợi trống.', flags: 64 });
   const lines = [];
   if (q.current) lines.push(`🎶 ${q.current.title || q.current.url}`);
   q.items.forEach((t, i) => lines.push(`${i + 1}. ${t.title || t.url} — ${t.requesterName ? `by ${t.requesterName}` : ''}`));
@@ -317,22 +345,22 @@ export async function handleQueue(interaction) {
 }
 export async function handleLeave(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q) return interaction.reply({ content: '👋 Bot đã rời trước đó.', ephemeral: true });
+  if (!q) return interaction.reply({ content: '👋 Bot đã rời trước đó.', flags: 64 });
   fullCleanup(interaction.guild, q);
   queues.delete(interaction.guildId);
   await interaction.reply({ content: '👋 Đã rời kênh và giải phóng RAM.' });
 }
 export async function handlePause(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q) return interaction.reply({ content: '⏸️ Không có gì để tạm dừng.', ephemeral: true });
+  if (!q) return interaction.reply({ content: '⏸️ Không có gì để tạm dừng.', flags: 64 });
   try { q.player.pause(true); armIdleTimer(interaction.guild, q); await interaction.reply({ content: '⏸️ Đã tạm dừng.' }); }
-  catch { await interaction.reply({ content: '❌ Không thể tạm dừng.', ephemeral: true }); }
+  catch { await interaction.reply({ content: '❌ Không thể tạm dừng.', flags: 64 }); }
 }
 export async function handleResume(interaction) {
   const q = queues.get(interaction.guildId);
-  if (!q) return interaction.reply({ content: '▶️ Không có gì để tiếp tục.', ephemeral: true });
+  if (!q) return interaction.reply({ content: '▶️ Không có gì để tiếp tục.', flags: 64 });
   try { clearIdleTimer(q); q.player.unpause(); await interaction.reply({ content: '▶️ Tiếp tục phát.' }); }
-  catch { await interaction.reply({ content: '❌ Không thể tiếp tục.', ephemeral: true }); }
+  catch { await interaction.reply({ content: '❌ Không thể tiếp tục.', flags: 64 }); }
 }
 export async function handleSkipTo() { return; }
 export async function handlePrev() { return; }
