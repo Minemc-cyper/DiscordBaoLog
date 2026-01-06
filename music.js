@@ -214,7 +214,7 @@ async function next(guild) {
   }
 
   const dl = ytdlp.exec(playableUrl, {
-    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, cookies:'./cookies.txt'
+    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, //cookies:'./cookies.txt'
   });
   if (typeof dl?.catch === 'function') dl.catch(()=>{});
   attachProcSwallow(dl, 'yt-dlp');
