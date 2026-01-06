@@ -17,7 +17,7 @@ const{
   handlePlay, handleSkip, handleStop, handleQueue, handleLeave,
   handlePause, handleResume,
   currentController, currentControllerName
-} = require ('./music.js');
+} = require ('./music.cjs');
 
 const Canvas = require('canvas');
 const path = require('path');
