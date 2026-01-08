@@ -171,7 +171,7 @@ function makeOggOpusPipeline(inputStream) {
   );
 
   ff.stderr.on('data', d => console.log('[ffmpeg]', String(d).trim()));
-  if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
+
 
   attachProcSwallow(ff, 'ffmpeg');
 
@@ -217,6 +217,7 @@ async function next(guild) {
   const dl = ytdlp.exec(playableUrl, {
     output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, preferFreeFormats: true, youtubeSkipDashManifest: true, //cookies:'./cookies.txt'
   });
+  if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
   if (typeof dl?.catch === 'function') dl.catch(()=>{});
   attachProcSwallow(dl, 'youtube-dl-exec');
 
