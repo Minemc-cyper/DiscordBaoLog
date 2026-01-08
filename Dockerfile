@@ -1,7 +1,7 @@
 FROM node:22.12.0-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python-is-python3 ffmpeg \
+    python3 python-is-python3 \
     make g++ \
   && rm -rf /var/lib/apt/lists/*
 
@@ -12,4 +12,5 @@ RUN npm ci --omit=dev
 
 COPY . .
 
+ENV NODE_ENV=production
 CMD ["npm", "start"]
