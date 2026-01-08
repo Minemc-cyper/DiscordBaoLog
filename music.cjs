@@ -167,8 +167,11 @@ function makeOggOpusPipeline(inputStream) {
       '-f', 'ogg',
       'pipe:1',
     ],
-    { stdio: ['pipe', 'pipe', 'ignore'] }
+    { stdio: ['pipe', 'pipe', 'pipe'] }
   );
+
+  ff.stderr.on('data', d => console.log('[ffmpeg]', String(d).trim()));
+  if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
 
   attachProcSwallow(ff, 'ffmpeg');
 
@@ -197,10 +200,12 @@ async function next(guild) {
 
   if (!q.connection || q.leaving) { q.current = null; return; }
 
-  const headers = [];
+  const headers = ['user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'accept-language: en-US,en;q=0.9',
+  'referer: https://www.youtube.com/',
+  ];
   if (process.env.YT_COOKIE) headers.push(`cookie: ${process.env.YT_COOKIE}`);
-  headers.push('referer: https://www.youtube.com', 'user-agent: Mozilla/5.0');
-
+  
   const playableUrl = await resolvePlayableUrl(track.url);
   if (!playableUrl) {
     if (q.textChannelId) safeSend(guild, q.textChannelId, { content: `❌ Không phát được link này: ${track.url}` });
@@ -210,7 +215,7 @@ async function next(guild) {
   }
 
   const dl = ytdlp.exec(playableUrl, {
-    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, //cookies:'./cookies.txt'
+    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true,  addHeader: headers, preferFreeFormats: true, youtubeSkipDashManifest: true, //cookies:'./cookies.txt'
   });
   if (typeof dl?.catch === 'function') dl.catch(()=>{});
   attachProcSwallow(dl, 'youtube-dl-exec');
