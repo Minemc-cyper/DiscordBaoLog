@@ -1,23 +1,23 @@
 require('dotenv').config();
-const { 
-    Client, 
-    GatewayIntentBits, 
-    Partials, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    AttachmentBuilder, 
-    AuditLogEvent,
-    REST,   
-    Routes 
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  AttachmentBuilder,
+  AuditLogEvent,
+  REST,
+  Routes
 } = require('discord.js');
 
-const{
+const {
   handlePlay, handleSkip, handleStop, handleQueue, handleLeave,
-  handlePause, handleResume,
+  handlePause, handleResume, handleTrending, handleArtist,
   currentController, currentControllerName
-} = require ('./music.cjs');
+} = require('./music.cjs');
 
 const Canvas = require('canvas');
 const path = require('path');
@@ -29,7 +29,7 @@ const axios = require('axios');
 const TOKEN = process.env.DISCORD_TOKEN?.trim();
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID?.trim();
 const DJ_ROLE = process.env.DJ_ROLE || 'DJ';
-const WEB_API_URL = "https://laogicungton.site/api.php" 
+const WEB_API_URL = "https://laogicungton.site/api.php"
 const WEB_API_SECRET = process.env.WEB_API_SECRET; // Phải giống trong file PHP
 const ALLOWED_ROLES = ["AD-N", "Net"]; // Tên các role được phép
 
@@ -73,15 +73,15 @@ if (!LOG_CHANNEL_ID) {
 }
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.DirectMessages
-    ],
-    partials: [Partials.Channel]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: [Partials.Channel]
 });
 /* =========================
    Helpers
@@ -351,246 +351,282 @@ client.on('messageDelete', async (message) => {
 
 /* ========================= Đăng Kí LỆNH / BUTTONS ========================= */
 const commands = [
+  {
+    name: 'artist',
+    description: '🎤 Phát tuyển tập bài hát của Ca sĩ/Nghệ sĩ',
+    options: [
       {
-        name: 'login',
-        description: '🚀 Lấy Token đăng nhập Web (Chỉ hiện cho riêng bạn)',
-      },
-      {
-        name: 'play',
-        description: '🎵 Phát Nhạc Từ URL (YouTube, Spotify, v.v.)',
-        options: [
-          {
-            name: 'query',
-            description: 'URL hoặc từ khóa tìm kiếm',
-            type: 3, // STRING
-            required: true,
-          }
-        ]
-      },
-
-      {
-        name: 'pause',
-        description: '⏸️ Dừng Nhạc Tạm Thời',
-      },
-      {
-        name: 'queue',
-        description: ' Xem Danh Sách Phát Hiện Tại',
-      },    
-      {
-        name: 'leave',
-        description: '🚪 Rời khỏi kênh thoại',
-      },
-      {
-        name: 'stop',
-        description: '⏹️ Dừng phát nhạc và xóa danh sách phát',
-      },
-      {
-        name: 'skip',
-        description: '⏭️ Bỏ qua bài hát hiện tại', 
-      },
-      {
-        name: 'resume',
-        description: '▶️ Tiếp tục phát nhạc bị tạm dừng',
-      },
-      {
-        name: 'prev',
-        description: '⏮️ Quay lại bài hát trước đó',
-      },
-      {
-        name: 'skipto',
-        description: '⏩ Nhảy đến bài hát trong danh sách phát',
-      },
-      {
-        name: 'reset',
-        description: '🔄 Đặt lại Token đăng nhập Web của bạn',
+        name: 'name',
+        description: 'Tên Ca sĩ/Nghệ sĩ (VD: Đen Vâu, Chillies...)',
+        type: 3, // STRING
+        required: true,
       }
+    ]
+  },
+  {
+    name: 'trending',
+    description: '🔥 Phát nhạc Trending theo quốc gia',
+    options: [
+      {
+        name: 'country',
+        description: 'Chọn quốc gia',
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: 'Vietnam', value: 'VN' },
+          { name: 'US', value: 'US' },
+          { name: 'UK', value: 'UK' },
+          { name: 'Korea (K-Pop)', value: 'KR' },
+          { name: 'Japan (J-Pop)', value: 'JP' },
+          { name: 'Global', value: 'Global' }
+        ]
+      }
+    ]
+  },
+  {
+    name: 'login',
+    description: '🚀 Lấy Token đăng nhập Web (Chỉ hiện cho riêng bạn)',
+  },
+  {
+    name: 'play',
+    description: '🎵 Phát Nhạc Từ URL (YouTube, Spotify, v.v.)',
+    options: [
+      {
+        name: 'query',
+        description: 'URL hoặc từ khóa tìm kiếm',
+        type: 3, // STRING
+        required: true,
+      }
+    ]
+  },
+
+  {
+    name: 'pause',
+    description: '⏸️ Dừng Nhạc Tạm Thời',
+  },
+  {
+    name: 'queue',
+    description: ' Xem Danh Sách Phát Hiện Tại',
+  },
+  {
+    name: 'leave',
+    description: '🚪 Rời khỏi kênh thoại',
+  },
+  {
+    name: 'stop',
+    description: '⏹️ Dừng phát nhạc và xóa danh sách phát',
+  },
+  {
+    name: 'skip',
+    description: '⏭️ Bỏ qua bài hát hiện tại',
+  },
+  {
+    name: 'resume',
+    description: '▶️ Tiếp tục phát nhạc bị tạm dừng',
+  },
+  {
+    name: 'prev',
+    description: '⏮️ Quay lại bài hát trước đó',
+  },
+  {
+    name: 'skipto',
+    description: '⏩ Nhảy đến bài hát trong danh sách phát',
+  },
+  {
+    name: 'reset',
+    description: '🔄 Đặt lại Token đăng nhập Web của bạn',
+  }
 ];
 
 const rest = new REST({ version: '10' });
 // ====================================================
 // 2. SỰ KIỆN BOT ONLINE
 // ====================================================
-client.once('clientReady', async () => { 
-    console.log(`✅ Bot đã online: ${client.user.username}`);
-    
-    // Lấy token trực tiếp từ bot để nạp vào REST
-    const tokenToUse = client.token; 
+client.once('clientReady', async () => {
+  console.log(`✅ Bot đã online: ${client.user.username}`);
 
-    try {
-        console.log('⏳ Đang làm mới lệnh Slash (/) ...');
-        rest.setToken(tokenToUse);
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands },
-        );
-        console.log('✅ Đăng ký lệnh thành công!');
-    } catch (error) {
-        console.error('❌ Lỗi đăng ký lệnh:', error);
-    }
+  // Lấy token trực tiếp từ bot để nạp vào REST
+  const tokenToUse = client.token;
+
+  try {
+    console.log('⏳ Đang làm mới lệnh Slash (/) ...');
+    rest.setToken(tokenToUse);
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands },
+    );
+    console.log('✅ Đăng ký lệnh thành công!');
+  } catch (error) {
+    console.error('❌ Lỗi đăng ký lệnh:', error);
+  }
 });
 
 // ====================================================
 // 3. XỬ LÝ LỆNH SLASH (/LOGIN & /RESET)
 // ====================================================
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
-    // Chỉ dùng trong server (trừ lệnh login/reset có thể cân nhắc mở DM nếu muốn, nhưng ở đây check guild)
-    if (!interaction.guildId) {
-        return interaction.reply({ content: '❌ Chỉ dùng được trong server.', flags: 64 }).catch(() => {});
+  // Chỉ dùng trong server (trừ lệnh login/reset có thể cân nhắc mở DM nếu muốn, nhưng ở đây check guild)
+  if (!interaction.guildId) {
+    return interaction.reply({ content: '❌ Chỉ dùng được trong server.', flags: 64 }).catch(() => { });
+  }
+
+  const { commandName } = interaction;
+
+  try {
+    console.log(`[DEBUG] Handling command: '${commandName}'`);
+    // --- NHÓM LỆNH HỆ THỐNG: LOGIN & RESET ---
+    if (['login', 'reset'].includes(commandName)) {
+
+      // 1. Check quyền
+      const member = interaction.member;
+      const hasRole = member.roles.cache.some(role => ALLOWED_ROLES.includes(role.name));
+      if (!hasRole) {
+        return await interaction.reply({ content: "⛔ Bạn không có quyền (Role: AD-N/Net)!", flags: 64 });
+      }
+
+      // 2. Defer ngay lập tức để tránh lỗi "Unknown interaction" do timeout 3s
+      await interaction.deferReply({ flags: 64 });
+
+      // 3. Chuẩn bị gọi API
+      const params = new URLSearchParams();
+      params.append('secret', process.env.WEB_API_SECRET);
+      params.append('user_id', interaction.user.id);
+
+      // Xử lý riêng từng lệnh
+      if (commandName === 'login') {
+        const roleType = member.roles.cache.some(r => r.name === 'AD-N') ? 'AD-N' : 'Net';
+        params.append('action', 'create_token'); // Action chuẩn
+        params.append('role', roleType);
+
+        // Gọi API với timeout 5s để không bị treo
+        const response = await axios.post(WEB_API_URL, params, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 5000
+        });
+        const data = response.data;
+
+        if (data.status === 'success') {
+          const embed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('🔑 Token Truy Cập')
+            // Dùng 3 dấu huyền để dễ nhìn hơn
+            .setDescription(`\`\`\`${data.token}\`\`\`\n⚠️ Token có hạn 30 phút.\n👉 Bấm nút bên dưới để tự động đăng nhập.`)
+            .setFooter({ text: 'Chỉ mình bạn nhìn thấy tin nhắn này.' });
+
+          // Tạo nút bấm dạng Link
+          const row = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setLabel('🚀 Đăng Nhập Nhanh')
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://laogicungton.site/?auto_token=${data.token}`) // Truyền token lên URL
+            );
+
+          await interaction.editReply({ embeds: [embed], components: [row] });
+        }
+
+      } else if (commandName === 'reset') {
+        params.append('action', 'reset_token');
+
+        const response = await axios.post(WEB_API_URL, params, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 5000
+        });
+        const data = response.data;
+
+        if (data.status === 'success') {
+          await interaction.editReply({ content: `✅ **Thành công:** ${data.msg}\n(Đã kích hoạt Kill Switch)` });
+        } else {
+          await interaction.editReply({ content: `⚠️ **Thông báo:** ${data.msg}` });
+        }
+      }
+      return; // Kết thúc xử lý Login/Reset
     }
 
-    const { commandName } = interaction;
+    // --- NHÓM LỆNH NHẠC (MUSIC) ---
+    // Guard Control: Check xem có được phép điều khiển nhạc không
+    const musicCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto', 'trending', 'artist'];
+    if (musicCommands.includes(commandName)) {
+      if (!(await guardControl(interaction))) return;
+    }
 
+    switch (commandName) {
+      case 'artist': return handleArtist(interaction);
+      case 'trending': return handleTrending(interaction);
+      case 'play': return handlePlay(interaction);
+      case 'queue': return handleQueue(interaction);
+      case 'leave': return handleLeave(interaction);
+      case 'stop': return handleStop(interaction);
+      case 'skip': return handleSkip(interaction);
+      case 'pause': return handlePause(interaction);
+      case 'resume': return handleResume(interaction);
+      case 'prev': return handlePrev?.(interaction);
+      case 'skipto': return handleSkipTo?.(interaction);
+      default:
+        // Nếu lệnh không khớp cái nào
+        return interaction.reply({ content: '❓ Lệnh không hỗ trợ.', flags: 64 }).catch(() => { });
+    }
+
+  } catch (err) {
+    console.error(`🚨 Lỗi xử lý lệnh /${commandName}:`, err.message);
+
+    // Xử lý lỗi an toàn để không crash bot
     try {
-        // --- NHÓM LỆNH HỆ THỐNG: LOGIN & RESET ---
-        if (['login', 'reset'].includes(commandName)) {
-            
-            // 1. Check quyền
-            const member = interaction.member;
-            const hasRole = member.roles.cache.some(role => ALLOWED_ROLES.includes(role.name));
-            if (!hasRole) {
-                return await interaction.reply({ content: "⛔ Bạn không có quyền (Role: AD-N/Net)!", flags: 64 });
-            }
-
-            // 2. Defer ngay lập tức để tránh lỗi "Unknown interaction" do timeout 3s
-            await interaction.deferReply({ flags: 64 });
-
-            // 3. Chuẩn bị gọi API
-            const params = new URLSearchParams();
-            params.append('secret', process.env.WEB_API_SECRET);
-            params.append('user_id', interaction.user.id);
-
-            // Xử lý riêng từng lệnh
-            if (commandName === 'login') {
-                const roleType = member.roles.cache.some(r => r.name === 'AD-N') ? 'AD-N' : 'Net';
-                params.append('action', 'create_token'); // Action chuẩn
-                params.append('role', roleType);
-
-                // Gọi API với timeout 5s để không bị treo
-                const response = await axios.post(WEB_API_URL, params, {
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    timeout: 5000 
-                });
-                const data = response.data;
-
-                if (data.status === 'success') {
-                const embed = new EmbedBuilder()
-                    .setColor('#00ff00')
-                    .setTitle('🔑 Token Truy Cập')
-                    // Dùng 3 dấu huyền để dễ nhìn hơn
-                    .setDescription(`\`\`\`${data.token}\`\`\`\n⚠️ Token có hạn 30 phút.\n👉 Bấm nút bên dưới để tự động đăng nhập.`)
-                    .setFooter({ text: 'Chỉ mình bạn nhìn thấy tin nhắn này.' });
-
-                // Tạo nút bấm dạng Link
-                const row = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setLabel('🚀 Đăng Nhập Nhanh')
-                            .setStyle(ButtonStyle.Link)
-                            .setURL(`https://laogicungton.site/?auto_token=${data.token}`) // Truyền token lên URL
-                    );
-
-                await interaction.editReply({ embeds: [embed], components: [row] });
-            }
-
-            } else if (commandName === 'reset') {
-                params.append('action', 'reset_token');
-                
-                const response = await axios.post(WEB_API_URL, params, {
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    timeout: 5000
-                });
-                const data = response.data;
-
-                if (data.status === 'success') {
-                    await interaction.editReply({ content: `✅ **Thành công:** ${data.msg}\n(Đã kích hoạt Kill Switch)` });
-                } else {
-                    await interaction.editReply({ content: `⚠️ **Thông báo:** ${data.msg}` });
-                }
-            }
-            return; // Kết thúc xử lý Login/Reset
-        }
-
-        // --- NHÓM LỆNH NHẠC (MUSIC) ---
-        // Guard Control: Check xem có được phép điều khiển nhạc không
-        const musicCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto'];
-        if (musicCommands.includes(commandName)) {
-            if (!(await guardControl(interaction))) return;
-        }
-
-        switch (commandName) {
-            case 'play': return handlePlay(interaction);
-            case 'queue': return handleQueue(interaction);
-            case 'leave': return handleLeave(interaction);
-            case 'stop': return handleStop(interaction);
-            case 'skip': return handleSkip(interaction);
-            case 'pause': return handlePause(interaction);
-            case 'resume': return handleResume(interaction);
-            case 'prev': return handlePrev?.(interaction);
-            case 'skipto': return handleSkipTo?.(interaction);
-            default:
-                // Nếu lệnh không khớp cái nào
-                return interaction.reply({ content: '❓ Lệnh không hỗ trợ.', flags: 64 }).catch(() => {});
-        }
-
-    } catch (err) {
-        console.error(`🚨 Lỗi xử lý lệnh /${commandName}:`, err.message);
-        
-        // Xử lý lỗi an toàn để không crash bot
-        try {
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: "❌ Có lỗi xảy ra khi xử lý yêu cầu!" });
-            } else {
-                await interaction.reply({ content: "❌ Có lỗi xảy ra!", flags: 64 });
-            }
-        } catch (e) { 
-            // Nếu không thể reply (do token hết hạn hẳn), chỉ log ra console
-            console.error('Không thể gửi thông báo lỗi tới user:', e.message);
-        }
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: "❌ Có lỗi xảy ra khi xử lý yêu cầu!" });
+      } else {
+        await interaction.reply({ content: "❌ Có lỗi xảy ra!", flags: 64 });
+      }
+    } catch (e) {
+      // Nếu không thể reply (do token hết hạn hẳn), chỉ log ra console
+      console.error('Không thể gửi thông báo lỗi tới user:', e.message);
     }
+  }
 });
 
 client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-    // Bỏ qua lệnh slash cũ
-    if (message.content.startsWith('!login') || message.content.startsWith('!reset')) return;
+  if (message.author.bot) return;
+  // Bỏ qua lệnh slash cũ
+  if (message.content.startsWith('!login') || message.content.startsWith('!reset')) return;
 
-    if (message.content.startsWith('!')) {
-        try {
-            music.execute(message);
-        } catch (error) {
-            console.error("Lỗi Music:", error);
-        }
+  if (message.content.startsWith('!')) {
+    try {
+      // music.execute(message); // music is not defined
+      console.log('Legacy prefix commands not supported');
+    } catch (error) {
+      console.error("Lỗi Music:", error);
     }
+  }
 });
 
 client.on('guildMemberAdd', async member => {
-    try {
-        const channel = member.guild.channels.cache.find(ch => ch.name === 'welcome'); 
-        if (!channel) return;
+  try {
+    const channel = member.guild.channels.cache.find(ch => ch.name === 'welcome');
+    if (!channel) return;
 
-        const canvas = Canvas.createCanvas(700, 250);
-        const ctx = canvas.getContext('2d');
-        // Lưu ý: Cần đảm bảo file wallpaper.jpg cùng thư mục với index.cjs
-        const background = await Canvas.loadImage(path.join(__dirname, 'wallpaper.jpg')).catch(() => null);
-        
-        if (background) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
-        else { ctx.fillStyle = '#23272a'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    const canvas = Canvas.createCanvas(700, 250);
+    const ctx = canvas.getContext('2d');
+    // Lưu ý: Cần đảm bảo file wallpaper.jpg cùng thư mục với index.cjs
+    const background = await Canvas.loadImage(path.join(__dirname, 'wallpaper.jpg')).catch(() => null);
 
-        ctx.strokeStyle = '#74037b'; ctx.strokeRect(0, 0, canvas.width, canvas.height);
-        ctx.font = '28px sans-serif'; ctx.fillStyle = '#ffffff';
-        ctx.fillText('Welcome to the server,', canvas.width / 2.5, canvas.height / 3.5);
-        ctx.font = '35px sans-serif'; ctx.fillStyle = '#ffffff';
-        ctx.fillText(`${member.displayName}!`, canvas.width / 2.5, canvas.height / 1.8);
-        
-        ctx.beginPath(); ctx.arc(125, 125, 100, 0, Math.PI * 2, true); ctx.closePath(); ctx.clip();
-        const avatar = await Canvas.loadImage(member.user.displayAvatarURL({ extension: 'jpg' }));
-        ctx.drawImage(avatar, 25, 25, 200, 200);
-        
-        const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'welcome-image.png' });
-        channel.send({ content: `Chào mừng ${member} đã đến với server!`, files: [attachment] });
-    } catch (e) { console.error("Lỗi Welcome:", e); }
+    if (background) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+    else { ctx.fillStyle = '#23272a'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+
+    ctx.strokeStyle = '#74037b'; ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    ctx.font = '28px sans-serif'; ctx.fillStyle = '#ffffff';
+    ctx.fillText('Welcome to the server,', canvas.width / 2.5, canvas.height / 3.5);
+    ctx.font = '35px sans-serif'; ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${member.displayName}!`, canvas.width / 2.5, canvas.height / 1.8);
+
+    ctx.beginPath(); ctx.arc(125, 125, 100, 0, Math.PI * 2, true); ctx.closePath(); ctx.clip();
+    const avatar = await Canvas.loadImage(member.user.displayAvatarURL({ extension: 'jpg' }));
+    ctx.drawImage(avatar, 25, 25, 200, 200);
+
+    const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'welcome-image.png' });
+    channel.send({ content: `Chào mừng ${member} đã đến với server!`, files: [attachment] });
+  } catch (e) { console.error("Lỗi Welcome:", e); }
 });
 
 // --- ANTI-CRASH ---
@@ -598,4 +634,4 @@ process.on('unhandledRejection', (reason) => { console.log('🚨 Lỗi chưa x�
 process.on('uncaughtException', (err) => { console.log('🚨 Lỗi nghiêm trọng:', err); });
 
 // ĐĂNG NHẬP CUỐI CÙNG
-client.login(process.env.TOKEN);
+client.login(TOKEN);
