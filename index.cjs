@@ -19,7 +19,7 @@ const {
   currentController, currentControllerName
 } = require('./music.cjs');
 
-const Canvas = require('canvas');
+// const Canvas = require('canvas');
 const path = require('path');
 const axios = require('axios');
 
