@@ -15,7 +15,7 @@ const {
 
 const {
   handlePlay, handleSkip, handleStop, handleQueue, handleLeave,
-  handlePause, handleResume, handleTrending, handleArtist,
+  handlePause, handleResume, handleTrending, handleArtist, handleLoop,
   currentController, currentControllerName
 } = require('./music.cjs');
 
@@ -435,6 +435,23 @@ const commands = [
   {
     name: 'reset',
     description: '🔄 Đặt lại Token đăng nhập Web của bạn',
+  },
+  {
+    name: 'loop',
+    description: '🔁 Chọn chế độ lặp lại nhạc',
+    options: [
+      {
+        name: 'mode',
+        description: 'Chế độ lặp',
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: '⏹️ Tắt lặp (off)', value: 'off' },
+          { name: '🔂 Lặp lại bài này (song)', value: 'song' },
+          { name: '🔁 Lặp toàn bộ hàng đợi (queue)', value: 'queue' },
+        ]
+      }
+    ]
   }
 ];
 
@@ -547,7 +564,7 @@ client.on('interactionCreate', async (interaction) => {
 
     // --- NHÓM LỆNH NHẠC (MUSIC) ---
     // Guard Control: Check xem có được phép điều khiển nhạc không
-    const musicCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto', 'trending', 'artist'];
+    const musicCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto', 'trending', 'artist', 'loop'];
     if (musicCommands.includes(commandName)) {
       if (!(await guardControl(interaction))) return;
     }
@@ -564,6 +581,7 @@ client.on('interactionCreate', async (interaction) => {
       case 'resume': return handleResume(interaction);
       case 'prev': return handlePrev?.(interaction);
       case 'skipto': return handleSkipTo?.(interaction);
+      case 'loop': return handleLoop(interaction);
       default:
         // Nếu lệnh không khớp cái nào
         return interaction.reply({ content: '❓ Lệnh không hỗ trợ.', flags: 64 }).catch(() => { });
