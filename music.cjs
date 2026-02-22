@@ -25,6 +25,7 @@ function getQueue(guild) {
       idleTimer: null,
       textChannelId: null,
       leaving: false,
+      loopMode: 'off', // 'off' | 'song' | 'queue'
     };
     hookPlayer(q, guild);
     queues.set(guild.id, q);
@@ -38,9 +39,20 @@ function hookPlayer(q, guild) {
   });
   q.player.on('idle', () => {
     console.log('⏹️  Player: Idle');
+    const finishedTrack = q.current;
     safeStopCurrent(q, /*soft=*/true);
     q.current = null;
     if (q.leaving) return;
+
+    // Loop song: đẩy lại bài vừa xong vào đầu hàng đợi
+    if (q.loopMode === 'song' && finishedTrack) {
+      q.items.unshift(finishedTrack);
+    }
+    // Loop queue: đẩy bài vừa xong vào cuối hàng đợi
+    else if (q.loopMode === 'queue' && finishedTrack) {
+      q.items.push(finishedTrack);
+    }
+
     if (q.items.length > 0 && q.connection) {
       console.log('⏳ Đang nghỉ 3s...')
       setTimeout(() => {
@@ -54,9 +66,11 @@ function hookPlayer(q, guild) {
 
   q.player.on('error', (err) => {
     console.warn('Player error:', err?.message || err);
+    const finishedTrack = q.current;
     safeStopCurrent(q, /*soft=*/true);
     q.current = null;
     if (q.leaving) return;
+    // Khi có lỗi, không lặp lại bài đó để tránh vòng lặp lỗi vô tận
     if (q.items.length > 0 && q.connection) next(guild).catch(e => console.warn('[next error@PlayerError]', e?.message || e));
     else armIdleTimer(guild, q);
   });
@@ -566,6 +580,19 @@ async function handleResume(interaction) {
 async function handleSkipTo() { return; }
 async function handlePrev() { return; }
 
+async function handleLoop(interaction) {
+  const q = queues.get(interaction.guildId);
+  if (!q || (!q.current && q.items.length === 0)) {
+    return interaction.reply({ content: '❌ Không có nhạc nào đang phát để đặt chế độ lặp.', flags: 64 });
+  }
+
+  const mode = interaction.options.getString('mode');
+  q.loopMode = mode;
+
+  const labels = { off: '⏹️ Tắt lặp', song: '🔂 Lặp lại bài này', queue: '🔁 Lặp toàn bộ hàng đợi' };
+  await interaction.reply({ content: `${labels[mode] || mode}` });
+}
+
 async function handleArtist(interaction) {
   if (!interaction.guild || !interaction.member?.voice?.channel) {
     return interaction.reply({ content: '❌ Bạn cần vào voice channel trước.', flags: 64 });
@@ -702,6 +729,7 @@ module.exports = {
   handleSkipTo,
   handlePrev,
   handleTrending,
-  handleArtist // Export mới
+  handleArtist,
+  handleLoop, // Export mới
 };
 
