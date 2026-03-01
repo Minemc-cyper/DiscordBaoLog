@@ -472,59 +472,124 @@ async function fetchPlaylistData(url) {
   return null;
 }
 
+const TRENDING_API = process.env.TRENDING_API_URL || 'https://trandingsvn-production.up.railway.app';
+const TRENDING_CACHE = new Map(); // key: "COUNTRY:mode" -> { data, timestamp }
+const TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 phút
+
+async function fetchTrendingData(country) {
+  const cacheKey = country;
+  const cached = TRENDING_CACHE.get(cacheKey);
+
+  if (cached && (Date.now() - cached.timestamp < TRENDING_CACHE_TTL)) {
+    console.log(`[trending-cache] HIT: ${country}`);
+    return cached.data;
+  }
+
+  console.log(`[trending-cache] MISS: ${country} — đang gọi API...`);
+
+  const headers = { 'Content-Type': 'application/json' };
+  const apiKey = process.env.TRENDING_API_KEY;
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${TRENDING_API}/api/trending/${country}`, { headers });
+  if (!res.ok) throw new Error(`API returned ${res.status}`);
+
+  const data = await res.json();
+
+  // Lưu vào cache
+  TRENDING_CACHE.set(cacheKey, { data, timestamp: Date.now() });
+
+  return data;
+}
+
 async function handleTrending(interaction) {
   if (!interaction.guild || !interaction.member?.voice?.channel) {
     return interaction.reply({ content: '❌ Bạn cần vào voice channel trước.', flags: 64 });
   }
 
-  // Defer trước
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: 64 });
     }
   } catch (e) { return; }
 
-  const country = interaction.options.getString('country') || 'VN';
-
-  // Mapping Country -> Keywords for Playlist Search
-  let query = '';
-  let isUrl = false;
-
-  switch (country) {
-    case 'VN':
-      query = 'https://www.youtube.com/playlist?list=OLAK5uy_lEos0zuYBvGC9C0FSGG3pZ6gO4a82P6zg'; // Hot Hits Vietnam (Official)
-      isUrl = true;
-      break;
-    case 'US': query = 'Top 50 USA'; break;
-    case 'UK': query = 'Top 40 UK Official Chart'; break;
-    case 'KR': query = 'K-pop Hot Hits'; break;
-    case 'JP': query = 'J-Pop Hot Hits'; break;
-    case 'Global': query = 'Global Top 50 Songs'; break;
-    default: query = 'Top Trending Music'; break;
-  }
+  const country = (interaction.options.getString('country') || 'VN').toUpperCase();
+  const mode = interaction.options.getString('mode') || 'all'; // 'all' hoặc 'local'
 
   try {
-    let title = query;
-    let url = '';
+    const isCached = TRENDING_CACHE.has(country) && (Date.now() - TRENDING_CACHE.get(country).timestamp < TRENDING_CACHE_TTL);
+    await interaction.editReply({ content: `${isCached ? '⚡ Cache' : '🌐 API'} Đang lấy trending **${country}**${isCached ? ' (nhanh hơn vì đã cache)' : ' từ laogicungton.site...'}` });
 
-    if (isUrl) {
-      url = query;
-      title = "Hot Hits Vietnam (Official)";
-    } else {
-      // Dùng youtube-dl-exec để tìm playlist
-      const playlist = await searchPlaylist(query);
-
-      if (!playlist) {
-        return interaction.editReply({ content: `❌ Không tìm thấy playlist trending cho **${country}**.` });
-      }
-      title = playlist.title || query;
-      url = playlist.url || playlist.webpage_url;
+    // Gọi API (có cache + API key)
+    let data;
+    try {
+      data = await fetchTrendingData(country);
+    } catch (apiErr) {
+      return interaction.editReply({ content: `❌ Không tìm thấy dữ liệu trending cho **${country}**. Kiểm tra mã quốc gia và thử lại.` });
     }
 
-    await interaction.editReply({ content: `🔍 **Đang nạp playlist:** ${title} (${country})...` });
+    let songs = data.songs || [];
 
-    // Gọi handlePlay với URL của playlist
-    await handlePlay(interaction, url);
+    if (songs.length === 0) {
+      return interaction.editReply({ content: `❌ Không có bài nào trending cho **${country}** lúc này.` });
+    }
+
+    // Filter theo mode
+    if (mode === 'local') {
+      songs = songs.filter(s => s.is_local);
+      if (songs.length === 0) {
+        return interaction.editReply({ content: `❌ Không có nhạc bản địa nào trending ở **${country}** lúc này.` });
+      }
+    }
+
+    // Build queue items từ API data
+    const requesterId = interaction.user?.id;
+    const requesterName = interaction.member?.displayName || interaction.user?.username;
+
+    const tracks = songs.map(s => ({
+      url: s.youtube_url,
+      title: `#${s.rank} ${s.title}`,
+      duration: s.duration_sec,
+      requesterId,
+      requesterName
+    }));
+
+    // Setup voice & queue
+    const guild = interaction.guild;
+    const q = getQueue(guild);
+    q.textChannelId = interaction.channelId;
+    clearIdleTimer(q);
+
+    if (!q.connection) {
+      q.connection = joinVoiceChannel({
+        channelId: interaction.member.voice.channel.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: true,
+      });
+      q.connection.on('stateChange', (o, s) => {
+        if (s.status === VoiceConnectionStatus.Disconnected) fullCleanup(guild, q);
+      });
+    }
+
+    q.items.push(...tracks);
+
+    const modeLabel = mode === 'local' ? '🏠 Nhạc bản địa' : '🎵 Tất cả';
+    const countryName = data.country_name || country;
+    await interaction.editReply({
+      content: [
+        `✅ **Top ${songs.length} Trending — ${countryName} ${data.flag_url ? '' : ''}**`,
+        `📋 Chế độ: ${modeLabel}`,
+        `🎶 Đã thêm vào hàng đợi, bài đầu: **${songs[0].title}** (${songs[0].duration})`,
+        ``,
+        songs.slice(0, 5).map(s => `\`#${s.rank}\` ${s.title} — ${s.channel} (${s.duration})`).join('\n'),
+        songs.length > 5 ? `\n... và ${songs.length - 5} bài nữa.` : ''
+      ].join('\n')
+    });
+
+    if (q.player.state.status !== 'playing' && q.connection) {
+      next(guild).catch(e => console.warn('[next error@trending]', e?.message || e));
+    }
 
   } catch (e) {
     console.error('Trending Error:', e);
