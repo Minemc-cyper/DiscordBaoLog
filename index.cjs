@@ -365,20 +365,22 @@ const commands = [
   },
   {
     name: 'trending',
-    description: '🔥 Phát nhạc Trending theo quốc gia',
+    description: '🔥 Phát nhạc Trending theo quốc gia (Dữ liệu từ laogicungton.site)',
     options: [
       {
         name: 'country',
-        description: 'Chọn quốc gia',
+        description: 'Mã quốc gia (VD: VN, US, KR, JP, GB, AU, TH...)',
         type: 3, // STRING
         required: true,
+      },
+      {
+        name: 'mode',
+        description: 'Chế độ phát nhạc',
+        type: 3, // STRING
+        required: false,
         choices: [
-          { name: 'Vietnam', value: 'VN' },
-          { name: 'US', value: 'US' },
-          { name: 'UK', value: 'UK' },
-          { name: 'Korea (K-Pop)', value: 'KR' },
-          { name: 'Japan (J-Pop)', value: 'JP' },
-          { name: 'Global', value: 'Global' }
+          { name: '🎵 Tất cả (mặc định)', value: 'all' },
+          { name: '🏠 Nhạc bản địa', value: 'local' },
         ]
       }
     ]
