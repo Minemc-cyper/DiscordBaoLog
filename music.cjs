@@ -205,45 +205,33 @@ async function next(guild) {
 
   if (!q.connection || q.leaving) { q.current = null; return; }
 
-  const headers = ['user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'accept-language: en-US,en;q=0.9',
-    'referer: https://www.youtube.com/',
-  ];
-  if (process.env.YT_COOKIE) headers.push(`cookie: ${process.env.YT_COOKIE}`);
-
   const playableUrl = await resolvePlayableUrl(track.url);
   if (!playableUrl) {
-    if (q.textChannelId) safeSend(guild, q.textChannelId, { content: `❌ Không phát được link này: ${track.url}` });
+    if (q.textChannelId) safeSend(guild, q.textChannelId, { content: `❌ Không phát được: ${track.title || track.url}` });
     q.current = null;
     if (q.items.length > 0) next(guild).catch(() => { }); else armIdleTimer(guild, q);
     return;
   }
 
-  // Dùng yt-dlp exec cho ổn định với stream
-  const dl = ytdlp.exec(playableUrl, {
-    output: '-', format: 'bestaudio/best', noCheckCertificates: true, noPlaylist: true, addHeader: headers, preferFreeFormats: true, quiet: true,
-    jsRuntimes: 'node',
-  });
-  if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
-  if (typeof dl?.catch === 'function') dl.catch(() => { });
-  attachProcSwallow(dl, 'youtube-dl-exec');
-
-  const { stream: oggStream, ff } = makeOggOpusPipeline(dl.stdout);
-  q.proc = { dl, ff };
-
-  const { stream, type } = await demuxProbe(oggStream);
-  const resource = createAudioResource(stream, { inputType: type });
-
   try {
-    if (!q.connection || q.leaving) { safeStopCurrent(q, /*soft=*/true); q.current = null; return; }
+    // Dùng play-dl để stream (ổn định hơn yt-dlp với YouTube bot-detection)
+    console.log(`[next] Streaming: ${playableUrl}`);
+    const stream = await play.stream(playableUrl, { quality: 2, discordPlayerCompatibility: true });
+    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+
+    if (!q.connection || q.leaving) { q.current = null; return; }
+    q.proc = { dl: null, ff: null }; // Clear old procs
     q.player.play(resource);
     const sub = q.connection.subscribe(q.player);
     if (sub) console.log('[voice] subscribed');
   } catch (e) {
-    console.warn('[subscribe/play error]', e?.message || e);
+    console.warn('[play-dl stream error]', e?.message || e);
+    if (q.textChannelId) safeSend(guild, q.textChannelId, { content: `⚠️ Lỗi phát **${track.title || track.url}**, chuyển bài tiếp...` });
     safeStopCurrent(q, /*soft=*/true);
     q.current = null;
-    if (q.items.length > 0) next(guild).catch(() => { }); else armIdleTimer(guild, q);
+    if (q.items.length > 0) {
+      setTimeout(() => next(guild).catch(() => { }), 1000);
+    } else armIdleTimer(guild, q);
     return;
   }
 
@@ -251,7 +239,6 @@ async function next(guild) {
     const name = track.title || track.url;
     const dur = formatDuration(track.duration);
     const req = track.requesterName ? ` • yêu cầu: ${track.requesterName}` : '';
-    // Thêm footer hoặc message báo đây là bài trong playlist nếu cần (tuy nhiên logic hiện tại là flat list)
     safeSend(guild, q.textChannelId, { content: `🎶🎵 Đang phát: **${name}**${dur ? ` (${dur})` : ''}${req}` });
   }
 }
