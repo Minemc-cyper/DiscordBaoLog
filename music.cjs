@@ -214,13 +214,42 @@ async function next(guild) {
   }
 
   try {
-    // Dùng play-dl để stream (ổn định hơn yt-dlp với YouTube bot-detection)
-    console.log(`[next] Streaming: ${playableUrl}`);
-    const stream = await play.stream(playableUrl, { quality: 2, discordPlayerCompatibility: true });
-    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+    // Bước 1: Validate URL với play-dl
+    const urlType = await play.validate(playableUrl).catch(() => false);
+    console.log(`[next] URL type: ${urlType}, streaming: ${playableUrl}`);
+
+    let resource;
+
+    if (urlType && urlType !== false) {
+      // Dùng play-dl stream
+      const stream = await play.stream(playableUrl, { quality: 2 });
+      resource = createAudioResource(stream.stream, { inputType: stream.type });
+    } else {
+      // Fallback: dùng yt-dlp nếu play-dl không nhận URL
+      console.log('[next] play-dl validate failed, falling back to yt-dlp...');
+      const headers = [
+        'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+        'accept-language: en-US,en;q=0.9',
+        'referer: https://www.youtube.com/',
+      ];
+      if (process.env.YT_COOKIE) headers.push(`cookie: ${process.env.YT_COOKIE}`);
+
+      const dl = ytdlp.exec(playableUrl, {
+        output: '-', format: 'bestaudio/best', noCheckCertificates: true,
+        noPlaylist: true, addHeader: headers, preferFreeFormats: true, quiet: true,
+      });
+      if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
+      if (typeof dl?.catch === 'function') dl.catch(() => { });
+      attachProcSwallow(dl, 'yt-dlp-fallback');
+      const { stream: oggStream, ff } = makeOggOpusPipeline(dl.stdout);
+      q.proc = { dl, ff };
+      const { stream, type } = await demuxProbe(oggStream);
+      resource = createAudioResource(stream, { inputType: type });
+    }
 
     if (!q.connection || q.leaving) { q.current = null; return; }
-    q.proc = { dl: null, ff: null }; // Clear old procs
+    // Chỉ clear proc nếu dùng play-dl (yt-dlp fallback tự set proc rồi)
+    if (!q.proc.dl) q.proc = { dl: null, ff: null };
     q.player.play(resource);
     const sub = q.connection.subscribe(q.player);
     if (sub) console.log('[voice] subscribed');
