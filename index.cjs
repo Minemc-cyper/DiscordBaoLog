@@ -1,4 +1,20 @@
 require('dotenv').config();
+
+/* =========================
+   Railway Support: Load cookies từ Environment Variable
+   ========================= */
+const fs = require('fs');
+const path = require('path');
+
+if (process.env.COOKIES_CONTENT) {
+  try {
+    fs.writeFileSync(path.join(__dirname, 'cookies.txt'), process.env.COOKIES_CONTENT);
+    console.log('✅ Cookies file created from COOKIES_CONTENT environment variable');
+  } catch (error) {
+    console.error('❌ Error writing cookies file:', error.message);
+  }
+}
+
 const {
   Client,
   GatewayIntentBits,
@@ -20,7 +36,6 @@ const {
 } = require('./music.cjs');
 
 // const Canvas = require('canvas');
-const path = require('path');
 const axios = require('axios');
 
 /* =========================
