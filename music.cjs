@@ -5,13 +5,29 @@ const {
 } = require('@discordjs/voice');
 const { spawn } = require('node:child_process');
 const ffmpegStatic = require('ffmpeg-static');
-const ytdlp = require('youtube-dl-exec');
+const path = require('node:path');
+const fs = require('node:fs');
+const { create: createYtdlp } = require('youtube-dl-exec');
+// Dùng yt-dlp.exe local (mới nhất) trên Windows, system yt-dlp trên Linux
+const _localBin = path.join(__dirname, 'yt-dlp.exe');
+const _linuxBin = '/usr/local/bin/yt-dlp';
+const ytdlp = (process.platform === 'win32' && fs.existsSync(_localBin))
+  ? createYtdlp(_localBin)
+  : (process.platform !== 'win32' && fs.existsSync(_linuxBin) ? createYtdlp(_linuxBin) : require('youtube-dl-exec'));
 const play = require('play-dl'); // Added play-dl
 const { ChannelType } = require('discord.js');
 
 const ffmpegPath = ffmpegStatic || 'ffmpeg';
 const queues = new Map();
 const IDLE_MS = 5 * 60 * 1000;
+
+// Khởi tạo play-dl với YouTube cookie (bypass bot detection 2025+)
+if (process.env.YT_COOKIE) {
+  play.setToken({ youtube: { cookie: process.env.YT_COOKIE } });
+  console.log('[play-dl] Đã set YouTube cookie.');
+} else {
+  console.warn('[play-dl] Không có YT_COOKIE — có thể bị giới hạn bởi YouTube.');
+}
 
 function getQueue(guild) {
   let q = queues.get(guild.id);
@@ -220,23 +236,46 @@ async function next(guild) {
 
     let resource;
 
-    if (urlType && urlType !== false) {
-      // Dùng play-dl stream
-      const stream = await play.stream(playableUrl, { quality: 2 });
-      resource = createAudioResource(stream.stream, { inputType: stream.type });
-    } else {
-      // Fallback: dùng yt-dlp nếu play-dl không nhận URL
-      console.log('[next] play-dl validate failed, falling back to yt-dlp...');
-      const headers = [
-        'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-        'accept-language: en-US,en;q=0.9',
-        'referer: https://www.youtube.com/',
-      ];
-      if (process.env.YT_COOKIE) headers.push(`cookie: ${process.env.YT_COOKIE}`);
+    // Chỉ thử play-dl khi là yt_video URL thực sự.
+    // ytsearch1:... không được play.stream() hỗ trợ → phải dùng yt-dlp.
+    if (urlType === 'yt_video') {
+      try {
+        const stream = await play.stream(playableUrl, { quality: 2 });
+        resource = createAudioResource(stream.stream, { inputType: stream.type });
+      } catch (playDlErr) {
+        console.warn('[play-dl] yt_video stream failed, falling back to yt-dlp:', playDlErr?.message || playDlErr);
+        // fallthrough to yt-dlp block below
+      }
+    }
+
+    if (!resource) {
+      // Fallback: yt-dlp với cookies.txt để bypass bot detection YouTube
+      // Chrome 127+ dùng DPAPI mới, yt-dlp không đọc được → dùng file cookies.txt thủ công
+      const cookieOpts = {};
+      // Ưu tiên: cookies.txt cạnh bot > YT_COOKIES_FILE env > không có cookie
+      const localCookies = path.join(__dirname, 'cookies.txt');
+      const envCookies = process.env.YT_COOKIES_FILE;
+
+      if (fs.existsSync(localCookies)) {
+        cookieOpts.cookies = localCookies;
+        console.log('[next] yt-dlp: dùng cookies.txt local...');
+      } else if (envCookies && fs.existsSync(envCookies)) {
+        cookieOpts.cookies = envCookies;
+        console.log('[next] yt-dlp: dùng cookies file từ env:', envCookies);
+      } else {
+        console.warn('[next] yt-dlp: không tìm thấy cookies.txt — YouTube có thể block!');
+      }
 
       const dl = ytdlp.exec(playableUrl, {
-        output: '-', format: 'bestaudio/best', noCheckCertificates: true,
-        noPlaylist: true, addHeader: headers, preferFreeFormats: true, quiet: true,
+        output: '-',
+        format: 'bestaudio/best',
+        noCheckCertificates: true,
+        noPlaylist: true,
+        preferFreeFormats: true,
+        quiet: true,
+        // Truyền đường dẫn node.exe hiện tại để yt-dlp giải được n-challenge
+        jsRuntimes: `node:${process.execPath}`,
+        ...cookieOpts,
       });
       if (dl.stderr) dl.stderr.on('data', d => console.log('[yt-dlp]', String(d).trim()));
       if (typeof dl?.catch === 'function') dl.catch(() => { });
