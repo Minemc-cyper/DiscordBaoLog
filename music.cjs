@@ -8,6 +8,19 @@ const ffmpegStatic = require('ffmpeg-static');
 const path = require('node:path');
 const fs = require('node:fs');
 const { create: createYtdlp } = require('youtube-dl-exec');
+
+/* =========================
+   Railway Support: Create cookies.txt từ COOKIES_CONTENT
+   ========================= */
+if (process.env.COOKIES_CONTENT && !fs.existsSync(path.join(__dirname, 'cookies.txt'))) {
+  try {
+    fs.writeFileSync(path.join(__dirname, 'cookies.txt'), process.env.COOKIES_CONTENT);
+    console.log('✅ [music.cjs] Cookies file created from COOKIES_CONTENT');
+  } catch (error) {
+    console.error('❌ [music.cjs] Error writing cookies file:', error.message);
+  }
+}
+
 // Dùng yt-dlp.exe local (mới nhất) trên Windows, system yt-dlp trên Linux
 const _localBin = path.join(__dirname, 'yt-dlp.exe');
 const _linuxBin = '/usr/local/bin/yt-dlp';
