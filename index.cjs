@@ -47,6 +47,9 @@ const DJ_ROLE = process.env.DJ_ROLE || 'DJ';
 const WEB_API_URL = "https://laogicungton.site/api.php"
 const WEB_API_SECRET = process.env.WEB_API_SECRET; // Phải giống trong file PHP
 const ALLOWED_ROLES = ["AD-N", "Net"]; // Tên các role được phép
+const BOT_OWNER_ID = process.env.BOT_OWNER_ID?.trim();
+
+let isBotLocked = false;
 
 /* =========================
    Kiểm Tra Quyền Người Dùng
@@ -469,6 +472,14 @@ const commands = [
         ]
       }
     ]
+  },
+  {
+    name: 'lock',
+    description: '🔒 Đóng bot để bảo trì (Chỉ dành cho Owner)',
+  },
+  {
+    name: 'unlock',
+    description: '🔓 Mở lại bot sau bảo trì (Chỉ dành cho Owner)',
   }
 ];
 
@@ -577,6 +588,26 @@ client.on('interactionCreate', async (interaction) => {
         }
       }
       return; // Kết thúc xử lý Login/Reset
+    }
+
+    if (commandName === 'lock') {
+      if (!BOT_OWNER_ID || interaction.user.id !== BOT_OWNER_ID) {
+        return interaction.reply({ content: '❌ Bạn không có quyền sử dụng lệnh này.', flags: 64 });
+      }
+      isBotLocked = true;
+      return interaction.reply({ content: '🔒 **Bot đã được khóa để bảo trì.** Tất cả các lệnh khác sẽ tạm thời bị vô hiệu hóa.' });
+    }
+
+    if (commandName === 'unlock') {
+      if (!BOT_OWNER_ID || interaction.user.id !== BOT_OWNER_ID) {
+        return interaction.reply({ content: '❌ Bạn không có quyền sử dụng lệnh này.', flags: 64 });
+      }
+      isBotLocked = false;
+      return interaction.reply({ content: '🔓 **Bot đã được mở khóa.** Hoạt động bình thường.' });
+    }
+
+    if (isBotLocked && interaction.user.id !== BOT_OWNER_ID) {
+      return interaction.reply({ content: '🚧 **Bot hiện đang trong quá trình bảo trì.** Vui lòng thử lại sau!', flags: 64 });
     }
 
     // --- NHÓM LỆNH NHẠC (MUSIC) ---

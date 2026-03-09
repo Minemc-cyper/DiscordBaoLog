@@ -52,9 +52,11 @@ function getQueue(guild) {
       connection: null,
       proc: { dl: null, ff: null },
       idleTimer: null,
+      nextTimer: null,
       textChannelId: null,
       leaving: false,
       loopMode: 'off', // 'off' | 'song' | 'queue'
+      skipRequested: false,
     };
     hookPlayer(q, guild);
     queues.set(guild.id, q);
@@ -73,20 +75,28 @@ function hookPlayer(q, guild) {
     q.current = null;
     if (q.leaving) return;
 
+    const wasSkipped = q.skipRequested;
+    q.skipRequested = false;
+
     // Loop song: đẩy lại bài vừa xong vào đầu hàng đợi
-    if (q.loopMode === 'song' && finishedTrack) {
+    if (q.loopMode === 'song' && finishedTrack && !wasSkipped) {
       q.items.unshift(finishedTrack);
     }
     // Loop queue: đẩy bài vừa xong vào cuối hàng đợi
-    else if (q.loopMode === 'queue' && finishedTrack) {
+    else if (q.loopMode === 'queue' && finishedTrack && !wasSkipped) {
       q.items.push(finishedTrack);
     }
 
     if (q.items.length > 0 && q.connection) {
-      console.log('⏳ Đang nghỉ 3s...')
-      setTimeout(() => {
-        next(guild).catch(e => console.warn('[next error@Idle]', e?.message || e));
-      }, 3000);
+      if (wasSkipped) {
+        next(guild).catch(e => console.warn('[next error@Idle skip]', e?.message || e));
+      } else {
+        console.log('⏳ Đang nghỉ 3s...');
+        q.nextTimer = setTimeout(() => {
+          q.nextTimer = null;
+          next(guild).catch(e => console.warn('[next error@Idle]', e?.message || e));
+        }, 3000);
+      }
     }
     else {
       armIdleTimer(guild, q);
@@ -143,6 +153,7 @@ function safeStopCurrent(q, soft = false) {
 
 function fullCleanup(guild, q) {
   clearIdleTimer(q);
+  if (q.nextTimer) { clearTimeout(q.nextTimer); q.nextTimer = null; }
   q.leaving = true;
   safeStopCurrent(q);
   q.items = [];
@@ -299,7 +310,11 @@ async function next(guild) {
       resource = createAudioResource(stream, { inputType: type });
     }
 
-    if (!q.connection || q.leaving) { q.current = null; return; }
+    if (!q.connection || q.leaving || q.current !== track) { 
+      // Tránh cướp player nếu đã bị skip trong lúc đang fetch
+      console.log('[next] Aborted playing because track changed or skip requested');
+      return; 
+    }
     // Chỉ clear proc nếu dùng play-dl (yt-dlp fallback tự set proc rồi)
     if (!q.proc.dl) q.proc = { dl: null, ff: null };
     q.player.play(resource);
@@ -671,10 +686,41 @@ async function handleTrending(interaction) {
 async function handleSkip(interaction) {
   const q = queues.get(interaction.guildId);
   if (!q) return interaction.reply({ content: '⏭️ Không có gì để skip.', flags: 64 });
+
+  q.skipRequested = true;
+
+  if (q.nextTimer) {
+    clearTimeout(q.nextTimer);
+    q.nextTimer = null;
+    if (q.items.length > 0) {
+      const skipped = q.items.shift();
+      console.log('[skip] Skipped from queue during idle:', skipped.title || skipped.url);
+    }
+    await interaction.reply({ content: '⏭️ Đã skip.' }).catch(() => { });
+    if (q.items.length > 0 && q.connection) {
+      next(interaction.guild).catch(() => {});
+    } else {
+      armIdleTimer(interaction.guild, q);
+    }
+    return;
+  }
+
+  // Check state to see if it's currently fetching
+  if (q.player.state.status === 'idle') {
+    safeStopCurrent(q);
+    q.current = null; // Mark changed so next() aborts
+    await interaction.reply({ content: '⏭️ Đã skip.' }).catch(() => { });
+    if (q.items.length > 0 && q.connection) {
+      next(interaction.guild).catch(() => {});
+    } else {
+       armIdleTimer(interaction.guild, q);
+    }
+    return;
+  }
+
   safeStopCurrent(q);
   await interaction.reply({ content: '⏭️ Đã skip.' }).catch(() => { });
-  if (q.items.length > 0 && q.connection) next(interaction.guild).catch(() => { });
-  else armIdleTimer(interaction.guild, q);
+  // 'idle' event will cleanly trigger the next playback without delay (skipRequested = true)
 }
 async function handleStop(interaction) {
   const q = queues.get(interaction.guildId);
