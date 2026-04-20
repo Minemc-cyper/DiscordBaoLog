@@ -555,7 +555,7 @@ async function fetchPlaylistData(url) {
   return null;
 }
 
-const TRENDING_API = process.env.TRENDING_API_URL || 'https://trandingsvn-production.up.railway.app';
+const TRENDING_API = process.env.TRENDING_API_URL || 'https://trandings-vn-dxhh.vercel.app';
 const TRENDING_CACHE = new Map(); // key: "COUNTRY:mode" -> { data, timestamp }
 const TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 phút
 
