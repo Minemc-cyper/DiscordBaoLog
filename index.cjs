@@ -106,7 +106,7 @@ const client = new Client({
    ========================= */
 // Gửi embed vào kênh log
 async function sendLog(guild, embed) {
-  const My_SERVER_ID = '1382264943877029941';
+  const My_SERVER_ID = process.env.MY_SERVER_ID || '1382264943877029941';
   if (guild.id !== My_SERVER_ID) return; // Chỉ log trong server chính
   try {
     const ch = await guild.channels.fetch(LOG_CHANNEL_ID);
@@ -451,6 +451,14 @@ const commands = [
   {
     name: 'skipto',
     description: '⏩ Nhảy đến bài hát trong danh sách phát',
+    options: [
+      {
+        name: 'index',
+        description: 'Số thứ tự bài muốn nhảy tới (1, 2, 3...)',
+        type: 4, // INTEGER
+        required: true,
+      }
+    ]
   },
   {
     name: 'reset',
@@ -654,45 +662,14 @@ client.on('interactionCreate', async (interaction) => {
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-  // Bỏ qua lệnh slash cũ
-  if (message.content.startsWith('!login') || message.content.startsWith('!reset')) return;
-
   if (message.content.startsWith('!')) {
-    try {
-      // music.execute(message); // music is not defined
-      console.log('Legacy prefix commands not supported');
-    } catch (error) {
-      console.error("Lỗi Music:", error);
-    }
+    // Prefix commands không được hỗ trợ, dùng slash commands (/)
+    console.log('Legacy prefix commands not supported');
   }
 });
 
 client.on('guildMemberAdd', async member => {
-  try {
-    const channel = member.guild.channels.cache.find(ch => ch.name === 'welcome');
-    if (!channel) return;
-
-    const canvas = Canvas.createCanvas(700, 250);
-    const ctx = canvas.getContext('2d');
-    // Lưu ý: Cần đảm bảo file wallpaper.jpg cùng thư mục với index.cjs
-    const background = await Canvas.loadImage(path.join(__dirname, 'wallpaper.jpg')).catch(() => null);
-
-    if (background) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
-    else { ctx.fillStyle = '#23272a'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-
-    ctx.strokeStyle = '#74037b'; ctx.strokeRect(0, 0, canvas.width, canvas.height);
-    ctx.font = '28px sans-serif'; ctx.fillStyle = '#ffffff';
-    ctx.fillText('Welcome to the server,', canvas.width / 2.5, canvas.height / 3.5);
-    ctx.font = '35px sans-serif'; ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${member.displayName}!`, canvas.width / 2.5, canvas.height / 1.8);
-
-    ctx.beginPath(); ctx.arc(125, 125, 100, 0, Math.PI * 2, true); ctx.closePath(); ctx.clip();
-    const avatar = await Canvas.loadImage(member.user.displayAvatarURL({ extension: 'jpg' }));
-    ctx.drawImage(avatar, 25, 25, 200, 200);
-
-    const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'welcome-image.png' });
-    channel.send({ content: `Chào mừng ${member} đã đến với server!`, files: [attachment] });
-  } catch (e) { console.error("Lỗi Welcome:", e); }
+  // Welcome canvas đã bị tắt (Canvas chưa được cài). Chỉ log qua sendLog ở trên.
 });
 
 // --- ANTI-CRASH ---

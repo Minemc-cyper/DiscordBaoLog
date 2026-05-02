@@ -555,7 +555,7 @@ async function fetchPlaylistData(url) {
   return null;
 }
 
-const TRENDING_API = process.env.TRENDING_API_URL || 'https://trandings-vn-dxhh.vercel.app';
+const TRENDING_API = process.env.TRENDING_API_URL || 'https://trandingsvn-production.up.railway.app';
 const TRENDING_CACHE = new Map(); // key: "COUNTRY:mode" -> { data, timestamp }
 const TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 phút
 
@@ -726,6 +726,7 @@ async function handleStop(interaction) {
   const q = queues.get(interaction.guildId);
   if (!q) return interaction.reply({ content: '⏹️ Không có gì để dừng.', flags: 64 });
   fullCleanup(interaction.guild, q);
+  queues.delete(interaction.guildId); // Giải phóng RAM
   await interaction.reply({ content: '⏹️ Đã dừng và xoá hàng đợi.' });
 }
 async function handleQueue(interaction) {
@@ -747,7 +748,11 @@ async function handleLeave(interaction) {
 async function handlePause(interaction) {
   const q = queues.get(interaction.guildId);
   if (!q) return interaction.reply({ content: '⏸️ Không có gì để tạm dừng.', flags: 64 });
-  try { q.player.pause(true); armIdleTimer(interaction.guild, q); await interaction.reply({ content: '⏸️ Đã tạm dừng.' }); }
+  try {
+    q.player.pause(true);
+    // Không arm idle timer khi pause — user có thể resume lại
+    await interaction.reply({ content: '⏸️ Đã tạm dừng.' });
+  }
   catch { await interaction.reply({ content: '❌ Không thể tạm dừng.', flags: 64 }); }
 }
 async function handleResume(interaction) {
@@ -756,8 +761,27 @@ async function handleResume(interaction) {
   try { clearIdleTimer(q); q.player.unpause(); await interaction.reply({ content: '▶️ Tiếp tục phát.' }); }
   catch { await interaction.reply({ content: '❌ Không thể tiếp tục.', flags: 64 }); }
 }
-async function handleSkipTo() { return; }
-async function handlePrev() { return; }
+async function handleSkipTo(interaction) {
+  if (!interaction) return;
+  const q = queues.get(interaction.guildId);
+  if (!q || q.items.length === 0) {
+    return interaction.reply({ content: '❌ Hàng đợi trống, không thể nhảy bài.', flags: 64 });
+  }
+  const index = interaction.options?.getInteger('index');
+  if (!index || index < 1 || index > q.items.length) {
+    return interaction.reply({ content: `❌ Số thứ tự không hợp lệ. Hàng đợi có **${q.items.length}** bài.`, flags: 64 });
+  }
+  // Bỏ các bài trước index
+  q.items.splice(0, index - 1);
+  q.skipRequested = true;
+  safeStopCurrent(q);
+  await interaction.reply({ content: `⏩ Đã nhảy đến bài #${index}: **${q.items[0]?.title || ''}**` });
+}
+
+async function handlePrev(interaction) {
+  if (!interaction) return;
+  return interaction.reply({ content: '⏮️ Tính năng quay lại bài trước chưa được hỗ trợ.', flags: 64 });
+}
 
 async function handleLoop(interaction) {
   const q = queues.get(interaction.guildId);
