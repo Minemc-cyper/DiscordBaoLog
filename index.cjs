@@ -32,6 +32,7 @@ const {
 const {
   handlePlay, handleSkip, handleStop, handleQueue, handleLeave,
   handlePause, handleResume, handleTrending, handleArtist, handleLoop,
+  handleSkipTo, handlePrev,
   currentController, currentControllerName
 } = require('./music.cjs');
 
@@ -620,8 +621,9 @@ client.on('interactionCreate', async (interaction) => {
 
     // --- NHÓM LỆNH NHẠC (MUSIC) ---
     // Guard Control: Check xem có được phép điều khiển nhạc không
-    const musicCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto', 'trending', 'artist', 'loop'];
-    if (musicCommands.includes(commandName)) {
+    // Chỉ áp dụng cho lệnh điều khiển bài đang phát, KHÔNG áp dụng cho lệnh thêm bài mới
+    const controlCommands = ['leave', 'stop', 'skip', 'pause', 'resume', 'prev', 'skipto', 'loop'];
+    if (controlCommands.includes(commandName)) {
       if (!(await guardControl(interaction))) return;
     }
 
@@ -635,8 +637,8 @@ client.on('interactionCreate', async (interaction) => {
       case 'skip': return handleSkip(interaction);
       case 'pause': return handlePause(interaction);
       case 'resume': return handleResume(interaction);
-      case 'prev': return handlePrev?.(interaction);
-      case 'skipto': return handleSkipTo?.(interaction);
+      case 'prev': return handlePrev(interaction);
+      case 'skipto': return handleSkipTo(interaction);
       case 'loop': return handleLoop(interaction);
       default:
         // Nếu lệnh không khớp cái nào

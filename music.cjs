@@ -490,25 +490,6 @@ async function handlePlay(interaction, query) {
   }
 }
 
-// Helper: Tìm playlist bằng yt-dlp (ổn định hơn play-dl search)
-async function searchPlaylist(query) {
-  try {
-    const out = await ytdlp(`ytsearch1:playlist ${query}`, {
-      dumpSingleJson: true,
-      noCheckCertificates: true,
-      flatPlaylist: true,
-      quiet: true,
-      jsRuntimes: 'node',
-    });
-    if (out && out.entries && out.entries.length > 0) {
-      return out.entries[0]; // Trả về playlist đầu tiên
-    }
-  } catch (e) {
-    console.warn('[searchPlaylist error]', e?.message || e);
-  }
-  return null;
-}
-
 // Helper: Fetch playlist data (Try play-dl -> Fallback yt-dlp)
 async function fetchPlaylistData(url) {
   // 1. Try play-dl
@@ -601,7 +582,7 @@ async function handleTrending(interaction) {
 
   try {
     const isCached = TRENDING_CACHE.has(country) && (Date.now() - TRENDING_CACHE.get(country).timestamp < TRENDING_CACHE_TTL);
-    await interaction.editReply({ content: `${isCached ? '⚡ Cache' : '🌐 API'} Đang lấy trending **${country}**${isCached ? ' (nhanh hơn vì đã cache)' : ' từ laogicungton.site...'}` });
+    await interaction.editReply({ content: `${isCached ? '⚡ Cache' : '🌐 API'} Đang lấy trending **${country}**${isCached ? ' (nhanh hơn vì đã cache)' : '...'}` });
 
     // Gọi API (có cache + API key)
     let data;
@@ -811,109 +792,150 @@ async function handleArtist(interaction) {
   const artistName = interaction.options.getString('name');
 
   try {
-    // 1. Tìm kênh YouTube của nghệ sĩ
-    const results = await play.search(artistName, { source: { youtube: "channel" }, limit: 1 });
+    await interaction.editReply({ content: `🔍 Đang tìm nghệ sĩ **${artistName}** trên YouTube...` });
 
-    if (!results || results.length === 0) {
-      return interaction.editReply({ content: `❌ Không tìm thấy kênh YouTube nào của **${artistName}**.` });
+    // Dùng yt-dlp search thay play-dl (play-dl quá cũ, search channel đã chết)
+    let channelName = artistName;
+    let videos = [];
+
+    try {
+      // Tìm top bài hát của nghệ sĩ bằng yt-dlp search
+      const out = await ytdlp(`ytsearch30:${artistName} official audio`, {
+        dumpSingleJson: true,
+        noCheckCertificates: true,
+        flatPlaylist: true,
+        quiet: true,
+        jsRuntimes: `node:${process.execPath}`,
+      });
+
+      if (out && out.entries && out.entries.length > 0) {
+        videos = out.entries;
+        // Lấy tên channel phổ biến nhất trong kết quả
+        const channelCounts = {};
+        for (const v of videos) {
+          const ch = v.channel || v.uploader || '';
+          if (ch) channelCounts[ch] = (channelCounts[ch] || 0) + 1;
+        }
+        const sorted = Object.entries(channelCounts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length > 0) channelName = sorted[0][0];
+      }
+    } catch (e) {
+      console.warn('[artist] yt-dlp search failed:', e?.message || e);
     }
 
-    const channel = results[0];
-    // 2. Lấy playlist "Uploads" (Thay UC bằng UU)
-    // Check nếu id bắt đầu bằng UC
-    if (!channel.id || !channel.id.startsWith('UC')) {
-      return interaction.editReply({ content: `❌ Không tìm thấy danh sách video của **${channel.name}** (ID không chuẩn).` });
+    // Fallback: thử play-dl nếu yt-dlp không tìm được
+    if (videos.length === 0) {
+      try {
+        const results = await play.search(artistName, { source: { youtube: "channel" }, limit: 1 });
+        if (results && results.length > 0) {
+          const channel = results[0];
+          if (channel.id && channel.id.startsWith('UC')) {
+            channelName = channel.name || artistName;
+            const uploadsId = channel.id.replace('UC', 'UU');
+            const playlist = await play.playlist_info(uploadsId, { incomplete: true });
+            if (playlist && playlist.videos) {
+              videos = playlist.videos.map(v => ({
+                title: v.title,
+                url: v.url,
+                duration: v.durationInSec,
+                webpage_url: v.url,
+              }));
+            }
+          }
+        }
+      } catch (e2) {
+        console.warn('[artist] play-dl fallback also failed:', e2?.message || e2);
+      }
     }
-    const uploadsId = channel.id.replace('UC', 'UU');
 
-    await interaction.editReply({ content: `🔍 **Kênh:** ${channel.name}\n⏳ Đang tải danh sách bài hát (Lọc bài ngắn & trùng)...` });
+    if (videos.length === 0) {
+      return interaction.editReply({ content: `❌ Không tìm thấy bài hát nào của **${artistName}**.` });
+    }
 
-    // 3. Lấy video (giới hạn 100 bài gần nhất để nhanh)
-    const playlist = await play.playlist_info(uploadsId, { incomplete: true });
-    const videos = playlist.videos; // Lấy batch đầu tiên (thường là 100)
+    await interaction.editReply({ content: `🔍 **Nghệ sĩ:** ${channelName}\n⏳ Đang lọc bài hát (bỏ bài ngắn & trùng)...` });
 
-    // 4. Lọc & Khử trùng
-    // - Duration > 120s
-    // - Trùng tên thì lấy bài ngắn hơn (ưu tiên Audio/Lyric)
-
-    const map = new Map(); // NormalizedTitle -> Video
+    // Lọc & Khử trùng
+    const map = new Map();
 
     for (const v of videos) {
-      if (v.durationInSec < 120) continue; // Bỏ qua video dưới 2 phút (theo yêu cầu mới)
+      const dur = v.duration || v.durationInSec || 0;
+      if (dur < 120) continue; // Bỏ video dưới 2 phút
 
+      const title = v.title || '';
       // Chuẩn hóa tên: bỏ dấu ngoặc, lowercase
-      // VD: "Đen - Lối Nhỏ (M/V)" -> "den - loi nho"
-      const normTitle = v.title
+      const normTitle = title
         .toLowerCase()
         .replace(/\(.*?\)/g, '')
         .replace(/\[.*?\]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
+      if (!normTitle) continue;
+
       if (map.has(normTitle)) {
         const existing = map.get(normTitle);
-        // Giữ bài ngắn hơn
-        if (v.durationInSec < existing.durationInSec) {
-          map.set(normTitle, v);
+        // Giữ bài ngắn hơn (ưu tiên Audio/Lyric)
+        if (dur < (existing.duration || Infinity)) {
+          map.set(normTitle, { title, url: v.url || v.webpage_url || `https://youtu.be/${v.id}`, duration: dur });
         }
       } else {
-        map.set(normTitle, v);
+        map.set(normTitle, { title, url: v.url || v.webpage_url || `https://youtu.be/${v.id}`, duration: dur });
       }
     }
 
     const finalTracks = Array.from(map.values());
 
     if (finalTracks.length === 0) {
-      return interaction.editReply({ content: `❌ Không tìm thấy bài hát phù hợp (trên 2 phút) trong kênh **${channel.name}**.` });
+      return interaction.editReply({ content: `❌ Không tìm thấy bài hát phù hợp (trên 2 phút) của **${channelName}**.` });
     }
 
-    // 5. Thêm vào Queue
+    // Thêm vào Queue
     const qItems = finalTracks.map(v => ({
       title: v.title,
       url: v.url,
-      duration: v.durationInSec,
+      duration: v.duration,
       requesterName: interaction.user.username,
       requesterId: interaction.user.id
     }));
 
-    const guildId = interaction.guildId;
-    let q = queues.get(guildId);
+    const guild = interaction.guild;
+    let q = queues.get(guild.id);
 
-    // Nếu chưa có hàng đợi thì tạo mới & phát ngay
     if (!q) {
-      q = getQueue(interaction.guild);
+      q = getQueue(guild);
       q.textChannelId = interaction.channelId;
 
       q.connection = joinVoiceChannel({
         channelId: interaction.member.voice.channel.id,
-        guildId: interaction.guild.id,
-        adapterCreator: interaction.guild.voiceAdapterCreator,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
         selfDeaf: true,
       });
       q.connection.subscribe(q.player);
 
-      // Setup connection events
       q.connection.on('stateChange', (o, s) => {
-        if (s.status === VoiceConnectionStatus.Disconnected) fullCleanup(interaction.guild, q);
+        if (s.status === VoiceConnectionStatus.Disconnected) fullCleanup(guild, q);
       });
+    } else {
+      q.textChannelId = interaction.channelId;
+      clearIdleTimer(q);
     }
 
-    // Add tracks
     q.items.push(...qItems);
 
-    // Nếu bot đang rảnh (không phát nhạc), start luôn
+    // Nếu bot đang rảnh, start luôn
     if (q.player.state.status !== AudioPlayerStatus.Playing && q.player.state.status !== AudioPlayerStatus.Buffering && !q.current) {
-      next(interaction.guild);
+      next(guild).catch(e => console.warn('[next error@artist]', e?.message || e));
     }
 
     await interaction.editReply({
-      content: `✅ **Đã thêm ${qItems.length} bài** từ kênh **${channel.name}** vào hàng đợi.`
+      content: `✅ **Đã thêm ${qItems.length} bài** của **${channelName}** vào hàng đợi.`
     });
 
   } catch (e) {
     console.error('Artist Error:', e);
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: '❌ Lỗi khi tìm kiếm nghệ sĩ.' }).catch(() => { });
+      await interaction.editReply({ content: `❌ Lỗi khi tìm kiếm nghệ sĩ: ${e?.message || 'Unknown error'}` }).catch(() => { });
     }
   }
 }
